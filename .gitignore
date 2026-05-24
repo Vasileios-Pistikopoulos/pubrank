@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node / React
+node_modules/
+dist/
+.vite/
+
+# Datasets (too large for git)
+dblp_dataset/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code
+.claude/
+
+# Migrations (optional — keep if you want schema history)
+# backend/api/migrations/
