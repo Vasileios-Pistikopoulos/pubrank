@@ -156,3 +156,115 @@ iCore26 περιέχει 3 εγγραφές για AAAI (IDs 262, 353, 982) — 
 Το exact uppercase booktitle match έπιανε μόνο 3,472 papers από τα 1.4M inproceedings.
 
 **Fix:** Προστέθηκε `match_conference()` με first-word fallback — αν δεν υπάρχει exact match, δοκιμάζει μόνο την πρώτη λέξη του booktitle ("SIGMOD CONFERENCE" → "SIGMOD"). Αποτέλεσμα: 740,130 conference papers.
+
+---
+
+## Pagination → Infinite scroll (25/05/2026)
+
+Αρχικά προστέθηκε button-based pagination (PAGE_SIZE=50, smart ellipsis, CSS classes `.pg-btn` κλπ). Αντικαταστάθηκε αμέσως μετά με infinite scroll (βλ. παρακάτω) — οι CSS κλάσεις αφαιρέθηκαν, το component ξαναγράφτηκε εξ ολοκλήρου.
+
+---
+
+## Journals — "Only with papers" filter (25/05/2026)
+
+Η JournalsPage εμφάνιζε ~18k journals (SJR dataset) αλλά η πλειοψηφία δεν έχει papers στη DBLP (π.χ. περιοδικά οικονομίας, ιατρικής κλπ — DBLP καλύπτει μόνο CS).
+
+**Fix:** Checkbox "Only journals with papers" → backend query με `WHERE EXISTS (SELECT 1 FROM papers p WHERE p.journal_id = j.journal_id)`. Το filtering γίνεται εξολοκλήρου στο DBMS.
+
+---
+
+## DBMS compliance audit (25/05/2026)
+
+Πλήρης έλεγχος για Python aggregation που παραβιάζει τη φιλοσοφία "all processing inside DBMS".
+
+**Clear violations που διορθώθηκαν:**
+
+1. **`year_list()`** — 2 queries merged με Python `for` loop → ενιαίο SQL με `LEFT JOIN paper_authors`
+2. **`chart_linechart()`** — loop per conference/journal ID + Python `+=` → ένα `UNION ALL` query με `WHERE conference_id IN (...)`
+3. **`CategoryLineChartPanel` (frontend)** — JS `.filter()` στα category results → backend `WHERE for_description LIKE %s` query param
+
+**Gray areas (αφέθηκαν):**
+- Chart.js data pivoting (`byLabel`, `labels`, `datasets`): format conversion για το chart library, όχι business aggregation — το SQL κάνει ήδη το GROUP BY
+- Client-side search/pagination: UI presentation pattern, τα δεδομένα ήδη στη μνήμη
+
+---
+
+## Materialized summary tables (25/05/2026)
+
+Τα SQL Views είναι "logical" — επαναπροϋπολογίζουν τα JOINs σε κάθε query. Για μεγάλα datasets (5M+ paper_authors rows) αυτό είναι απαγορευτικά αργό.
+
+**Λύση:** Precomputed physical tables — το computation γίνεται μία φορά με `INSERT INTO ... SELECT` (εντός DBMS), και οι views επαναορίστηκαν ως `SELECT * FROM <table>`.
+
+**Νέα αρχεία SQL:**
+- `sql/03_year_stats.sql` — year_stats table (64 rows, 0.3ms query)
+- `sql/04_materialized.sql` — 6 tables + view redefinitions
+
+| Πίνακας | Rows | Αντικαθιστά |
+|---------|------|-------------|
+| `year_stats` | 64 | `v_year_summary` + inline JOIN |
+| `conf_year_stats` | 7,983 | `v_conf_year` |
+| `conf_summary_stats` | 710 | inline JOIN query στο conference_profile |
+| `journal_year_stats` | 14,102 | `v_journal_year` |
+| `journal_summary_stats` | 959 | inline JOIN query στο journal_profile |
+| `for_year_stats` | 406 | `v_for_year` |
+| `subject_area_year_stats` | 986 | `v_subject_area_year` |
+
+**Αποτέλεσμα:** Query times < 3ms σε όλα. Views παραμένουν ως interface — το `views.py` δεν χρειάστηκε σχεδόν καμία αλλαγή.
+
+**Σημείωση:** Profile stats (unfiltered) → `SELECT FROM conf/journal_summary_stats`. Filtered (year_from/year_to) → εξακολουθεί να κάνει dynamic JOIN γιατί `COUNT(DISTINCT author_id)` δεν μπορεί να αθροιστεί από per-year counts (set union problem).
+
+**year_list συγκεκριμένα:** Πριν τα materialized tables, το `GET /api/years/` έπαιρνε ~41s — έτρεχε 2 queries και τα merge-αρε σε Python loop (DBMS violation + αργό). Fix: `SELECT * FROM year_stats` σε 0.3ms.
+
+**Operational note — MySQL + Greek path:** Τα SQL scripts δεν μπορούσαν να τρέξουν με `SOURCE` λόγω ελληνικών χαρακτήρων στο path. Workaround: `$sql = Get-Content "...sql" -Raw; $sql | & mysql.exe -u root -proot academic_db`.
+
+---
+
+## Infinite scroll (25/05/2026)
+
+Αντικατάσταση pagination με infinite scroll σε όλες τις σελίδες (ConferencesPage, JournalsPage, ConferenceProfile, JournalProfile, YearProfile).
+
+**Νέο `Pagination.jsx`:** `useInfiniteScroll(items)` hook με `IntersectionObserver` (callback ref pattern — χρήση `useCallback` γιατί το sentinel div mountάρει μετά τη φόρτωση δεδομένων) + `<ScrollSentinel>` component. Batch size: 50 rows, rootMargin: 300px για early load.
+
+---
+
+## Bug fix: paper URLs (25/05/2026)
+
+Τα DBLP URLs ήταν αποθηκευμένα ως relative paths (πχ `db/conf/acii/acii2013.html#PeerBJ13`) αντί για full URLs.
+
+**Fix:** Στα 3 paper queries (conference_papers, journal_papers, year_profile) προστέθηκε SQL expression:
+```sql
+CASE WHEN p.url LIKE 'http%' THEN p.url
+     WHEN p.url IS NOT NULL   THEN CONCAT('https://dblp.org/', p.url)
+END AS url
+```
+Τα links πλέον ανοίγουν το αντίστοιχο DBLP entry.
+
+---
+
+## Bug fix: `%%` escaping + infinite spinner (25/05/2026)
+
+Προσθέτοντας `LIKE 'http%'` μέσα σε `cursor.execute()`, το Django ερμήνευσε το `%` ως Python format specifier → `ValueError: unsupported format character`. Το σφάλμα ήταν στο `conference_papers` endpoint.
+
+**Επίδραση:** Τα ConferenceProfile / JournalProfile χρησιμοποιούν `Promise.all([getConferenceProfile, getConferencePapers])`. Επειδή το `getConferencePapers` επέστρεφε 500 error, το `Promise.all` reject-αρε → `setLoading(false)` ποτέ δεν καλέστηκε → άπειρο spinner σε κάθε profile.
+
+**Fix:** `LIKE 'http%%'` (διπλό `%%` στο Django raw SQL για literal `%`). Εφαρμόστηκε και στα 3 paper endpoints (`conference_papers`, `journal_papers`, `year_profile`) με `replace_all=true`.
+
+---
+
+## Precomputed year_paper_list + year profile optimization (25/05/2026)
+
+**Πρόβλημα:** Το year_profile endpoint για χρονιές με πολλά papers (πχ 2005: 258k papers) ήταν αργό (~2s σε κάθε νέα χρονιά) λόγω random disk I/O στον papers πίνακα (1.5M rows).
+
+**Λύση (DBMS-only):** Νέος precomputed πίνακας `year_paper_list` — αποθηκεύει 500 αντιπροσωπευτικά papers ανά χρονιά με ήδη resolved venue και GROUP_CONCAT'd authors.
+
+**Αρχείο:** `sql/05_year_paper_list.sql` — MySQL stored procedure που κάνει loop ανά χρονιά, εκτελεί `INSERT INTO ... SELECT ... LIMIT 500` για κάθε έτος, τρέχει σε ~2s συνολικά (27,406 rows, 64 χρονιές).
+
+| Χρόνος | Πριν | Μετά |
+|--------|------|------|
+| Cold (πρώτη επίσκεψη) | ~2s/χρονιά | ~2s άπαξ (φόρτωση ολόκληρου πίνακα) |
+| Warm (επανεπίσκεψη) | ~65ms | ~55ms |
+| Μετά 1η επίσκεψη | κάθε χρονιά ξεχωριστά | **όλες οι χρονιές fast** |
+
+**Backend logic (`year_profile`):**
+- Αν **δεν υπάρχουν filters** → `SELECT * FROM year_paper_list WHERE year = %s` (1ms)
+- Αν **υπάρχουν filters** (conference/journal/author) → live subquery με `LIMIT 500`

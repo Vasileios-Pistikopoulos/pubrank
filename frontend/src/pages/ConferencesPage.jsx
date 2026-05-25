@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getConferences } from '../api/client'
+import { useInfiniteScroll, ScrollSentinel } from '../components/Pagination'
 
 const rankClass = r => r === 'A*' ? 'a-star' : r === 'A' ? 'a' : r === 'B' ? 'b' : r === 'C' ? 'c' : ''
 
@@ -15,18 +16,23 @@ export default function ConferencesPage() {
     c.title?.toLowerCase().includes(search.toLowerCase())
   )
 
+  const { visible, sentinelRef, hasMore, showing, total } = useInfiniteScroll(filtered)
+
   return (
     <div>
       <h1>Conferences</h1>
       <input className="search-input" placeholder="Search by name or acronym…"
         value={search} onChange={e => setSearch(e.target.value)} />
+      <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+        {total} results{hasMore ? ` — showing ${showing}` : ''}
+      </p>
       <div className="card">
         <table>
           <thead><tr>
             <th>Acronym</th><th>Title</th><th>Rank</th><th>Field of Research</th>
           </tr></thead>
           <tbody>
-            {filtered.map(c => (
+            {visible.map(c => (
               <tr key={c.conference_id}>
                 <td><Link to={`/conferences/${c.conference_id}`}>{c.acronym}</Link></td>
                 <td>{c.title}</td>
@@ -37,6 +43,7 @@ export default function ConferencesPage() {
           </tbody>
         </table>
       </div>
+      {hasMore && <ScrollSentinel sentinelRef={sentinelRef} />}
     </div>
   )
 }

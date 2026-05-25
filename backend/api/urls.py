@@ -22,6 +22,8 @@ urlpatterns = [
 
     # Charts
     path('charts/linechart/',                  views.chart_linechart),
+    path('charts/category-linechart/',         views.chart_category_linechart),
     path('charts/barchart/',                   views.chart_barchart),
     path('charts/scatter/',                    views.chart_scatter),
+    path('charts/scatter/venue-year/',         views.chart_scatter_venue_year),
 ]

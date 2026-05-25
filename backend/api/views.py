@@ -63,19 +63,20 @@ def conference_profile(request, conference_id):
         if year_from and year_to:
             cur.execute("""
                 SELECT MIN(p.year) AS first_year, MAX(p.year) AS last_year,
-                       COUNT(DISTINCT p.paper_id)  AS total_papers,
-                       COUNT(DISTINCT pa.author_id) AS total_distinct_authors,
-                       ROUND(COUNT(pa.author_id)/COUNT(DISTINCT p.paper_id),2) AS avg_authors_per_paper,
-                       ROUND(COUNT(DISTINCT p.paper_id)/(%s-%s+1),2) AS avg_papers_per_year
+                       COUNT(DISTINCT p.paper_id)   AS total_papers,
+                       COUNT(DISTINCT pa.author_id)  AS total_distinct_authors,
+                       ROUND(COUNT(pa.author_id)/COUNT(DISTINCT p.paper_id),2)  AS avg_authors_per_paper,
+                       ROUND(COUNT(DISTINCT p.paper_id)/(%s-%s+1),2)            AS avg_papers_per_year,
+                       ROUND(COUNT(pa.author_id)/(%s-%s+1),2)                   AS avg_authors_per_year
                 FROM papers p
                 JOIN paper_authors pa ON p.paper_id = pa.paper_id
                 WHERE p.conference_id = %s AND p.year BETWEEN %s AND %s
-            """, [year_to, year_from, conference_id, year_from, year_to])
+            """, [year_to, year_from, year_to, year_from, conference_id, year_from, year_to])
         else:
             cur.execute("""
                 SELECT first_year, last_year, total_papers, total_distinct_authors,
-                       avg_authors_per_paper, avg_papers_per_year
-                FROM v_conf_summary WHERE conference_id = %s
+                       avg_authors_per_paper, avg_papers_per_year, avg_authors_per_year
+                FROM conf_summary_stats WHERE conference_id = %s
             """, [conference_id])
         stats = row_as_dict(cur)
 
@@ -108,7 +109,10 @@ def conference_papers(request, conference_id):
 
     with connection.cursor() as cur:
         cur.execute(f"""
-            SELECT p.paper_id, p.title, p.year, p.pages, p.url,
+            SELECT p.paper_id, p.title, p.year, p.pages,
+                   CASE WHEN p.url LIKE 'http%%' THEN p.url
+                        WHEN p.url IS NOT NULL     THEN CONCAT('https://dblp.org/', p.url)
+                   END AS url,
                    GROUP_CONCAT(a.name ORDER BY pa.author_position SEPARATOR ', ') AS authors
             FROM papers p
             JOIN paper_authors pa ON p.paper_id  = pa.paper_id
@@ -126,13 +130,16 @@ def conference_papers(request, conference_id):
 # ------------------------------------------------------------------
 
 def journal_list(request):
-    """GET /api/journals/"""
+    """GET /api/journals/?has_papers=1"""
+    has_papers = request.GET.get('has_papers') == '1'
+    extra = "AND EXISTS (SELECT 1 FROM papers p WHERE p.journal_id = j.journal_id)" if has_papers else ""
     with connection.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT j.journal_id, j.title, j.sjr_rank, j.best_quartile,
                    j.publisher, j.country, bsa.name AS subject_area
             FROM journals j
             LEFT JOIN best_subject_area bsa ON j.best_subject_area_id = bsa.area_id
+            WHERE 1=1 {extra}
             ORDER BY j.sjr_rank
         """)
         return JsonResponse(rows_as_dicts(cur), safe=False)
@@ -155,19 +162,20 @@ def journal_profile(request, journal_id):
         if year_from and year_to:
             cur.execute("""
                 SELECT MIN(p.year) AS first_year, MAX(p.year) AS last_year,
-                       COUNT(DISTINCT p.paper_id)  AS total_papers,
-                       COUNT(DISTINCT pa.author_id) AS total_distinct_authors,
-                       ROUND(COUNT(pa.author_id)/COUNT(DISTINCT p.paper_id),2) AS avg_authors_per_paper,
-                       ROUND(COUNT(DISTINCT p.paper_id)/(%s-%s+1),2) AS avg_papers_per_year
+                       COUNT(DISTINCT p.paper_id)   AS total_papers,
+                       COUNT(DISTINCT pa.author_id)  AS total_distinct_authors,
+                       ROUND(COUNT(pa.author_id)/COUNT(DISTINCT p.paper_id),2)  AS avg_authors_per_paper,
+                       ROUND(COUNT(DISTINCT p.paper_id)/(%s-%s+1),2)            AS avg_papers_per_year,
+                       ROUND(COUNT(pa.author_id)/(%s-%s+1),2)                   AS avg_authors_per_year
                 FROM papers p
                 JOIN paper_authors pa ON p.paper_id = pa.paper_id
                 WHERE p.journal_id = %s AND p.year BETWEEN %s AND %s
-            """, [year_to, year_from, journal_id, year_from, year_to])
+            """, [year_to, year_from, year_to, year_from, journal_id, year_from, year_to])
         else:
             cur.execute("""
                 SELECT first_year, last_year, total_papers, total_distinct_authors,
-                       avg_authors_per_paper, avg_papers_per_year
-                FROM v_journal_summary WHERE journal_id = %s
+                       avg_authors_per_paper, avg_papers_per_year, avg_authors_per_year
+                FROM journal_summary_stats WHERE journal_id = %s
             """, [journal_id])
         stats = row_as_dict(cur)
 
@@ -199,7 +207,10 @@ def journal_papers(request, journal_id):
 
     with connection.cursor() as cur:
         cur.execute(f"""
-            SELECT p.paper_id, p.title, p.year, p.volume, p.number, p.pages, p.url,
+            SELECT p.paper_id, p.title, p.year, p.volume, p.number, p.pages,
+                   CASE WHEN p.url LIKE 'http%%' THEN p.url
+                        WHEN p.url IS NOT NULL     THEN CONCAT('https://dblp.org/', p.url)
+                   END AS url,
                    GROUP_CONCAT(a.name ORDER BY pa.author_position SEPARATOR ', ') AS authors
             FROM papers p
             JOIN paper_authors pa ON p.paper_id  = pa.paper_id
@@ -247,45 +258,66 @@ def author_profile(request, author_id):
 # ------------------------------------------------------------------
 
 def year_list(request):
-    """GET /api/years/"""
+    """GET /api/years/ — reads from precomputed year_stats table (see sql/03_year_stats.sql)"""
     with connection.cursor() as cur:
-        cur.execute("SELECT * FROM v_year_summary ORDER BY year")
+        cur.execute("SELECT * FROM year_stats ORDER BY year")
         return JsonResponse(rows_as_dicts(cur), safe=False)
 
 
 def year_profile(request, year):
     """GET /api/years/<year>/profile/?conference_id=&journal_id=&author_id="""
-    conf_filter   = request.GET.get('conference_id')
+    conf_filter    = request.GET.get('conference_id')
     journal_filter = request.GET.get('journal_id')
-    author_filter = request.GET.get('author_id')
+    author_filter  = request.GET.get('author_id')
 
+    # Filters applied inside the limiting subquery — all on papers columns
+    # (author filter uses a nested IN to avoid exposing pa alias to outer query)
+    inner_where = "p.year = %s"
     params = [year]
-    extra  = ""
     if conf_filter:
-        extra += " AND p.conference_id = %s"; params.append(conf_filter)
+        inner_where += " AND p.conference_id = %s";   params.append(conf_filter)
     if journal_filter:
-        extra += " AND p.journal_id = %s";    params.append(journal_filter)
+        inner_where += " AND p.journal_id = %s";      params.append(journal_filter)
     if author_filter:
-        extra += " AND pa.author_id = %s";    params.append(author_filter)
+        inner_where += " AND p.paper_id IN (SELECT paper_id FROM paper_authors WHERE author_id = %s)"
+        params.append(author_filter)
 
     with connection.cursor() as cur:
-        cur.execute("SELECT * FROM v_year_summary WHERE year = %s", [year])
+        cur.execute("SELECT * FROM year_stats WHERE year = %s", [year])
         summary = row_as_dict(cur)
 
-        cur.execute(f"""
-            SELECT p.paper_id, p.title, p.year, p.paper_type, p.pages, p.url,
-                   COALESCE(c.acronym, j.title) AS venue,
-                   GROUP_CONCAT(a.name ORDER BY pa.author_position SEPARATOR ', ') AS authors
-            FROM papers p
-            LEFT JOIN conferences c ON p.conference_id = c.conference_id
-            LEFT JOIN journals j    ON p.journal_id    = j.journal_id
-            JOIN  paper_authors pa  ON p.paper_id      = pa.paper_id
-            JOIN  authors a         ON pa.author_id     = a.author_id
-            WHERE p.year = %s {extra}
-            GROUP BY p.paper_id, p.title, p.year, p.paper_type, p.pages, p.url, venue
-            ORDER BY p.paper_type, venue, p.title
-            LIMIT 500
-        """, params)
+        if not conf_filter and not journal_filter and not author_filter:
+            # Unfiltered: serve from precomputed table — instant.
+            cur.execute("""
+                SELECT paper_id, title, year, paper_type, pages, url, venue, authors
+                FROM year_paper_list
+                WHERE year = %s
+                ORDER BY paper_type, venue, title
+            """, [year])
+        else:
+            # Filtered: live subquery — inner LIMIT 500 keeps it bounded.
+            cur.execute(f"""
+                SELECT sub.paper_id, sub.title, sub.year, sub.paper_type,
+                       sub.pages, sub.url, sub.venue,
+                       GROUP_CONCAT(a.name ORDER BY pa.author_position SEPARATOR ', ') AS authors
+                FROM (
+                    SELECT p.paper_id, p.title, p.year, p.paper_type, p.pages,
+                           CASE WHEN p.url LIKE 'http%%' THEN p.url
+                                WHEN p.url IS NOT NULL     THEN CONCAT('https://dblp.org/', p.url)
+                           END AS url,
+                           COALESCE(c.acronym, j.title) AS venue
+                    FROM papers p
+                    LEFT JOIN conferences c ON p.conference_id = c.conference_id
+                    LEFT JOIN journals j    ON p.journal_id    = j.journal_id
+                    WHERE {inner_where}
+                    LIMIT 500
+                ) sub
+                JOIN paper_authors pa ON sub.paper_id = pa.paper_id
+                JOIN authors a        ON pa.author_id  = a.author_id
+                GROUP BY sub.paper_id, sub.title, sub.year, sub.paper_type,
+                         sub.pages, sub.url, sub.venue
+                ORDER BY sub.paper_type, sub.venue, sub.title
+            """, params)
         papers = rows_as_dicts(cur)
 
     return JsonResponse({'summary': summary, 'papers': papers})
@@ -297,8 +329,6 @@ def year_profile(request, year):
 
 def chart_linechart(request):
     """GET /api/charts/linechart/?conf_ids=1,2&jour_ids=3&metric=paper_count&year_from=2000&year_to=2020"""
-    conf_ids  = request.GET.get('conf_ids', '')
-    jour_ids  = request.GET.get('jour_ids', '')
     metric    = request.GET.get('metric', 'paper_count')
     year_from = request.GET.get('year_from', 1950)
     year_to   = request.GET.get('year_to', 2030)
@@ -307,29 +337,36 @@ def chart_linechart(request):
     if metric not in allowed_metrics:
         return JsonResponse({'error': 'invalid metric'}, status=400)
 
-    results = []
+    conf_ids = [x.strip() for x in request.GET.get('conf_ids', '').split(',') if x.strip()]
+    jour_ids = [x.strip() for x in request.GET.get('jour_ids', '').split(',') if x.strip()]
+
+    if not conf_ids and not jour_ids:
+        return JsonResponse([], safe=False)
+
+    parts  = []
+    params = []
+    if conf_ids:
+        placeholders = ','.join(['%s'] * len(conf_ids))
+        parts.append(f"""
+            SELECT c.acronym AS label, v.year, v.{metric} AS value
+            FROM v_conf_year v
+            JOIN conferences c ON v.conference_id = c.conference_id
+            WHERE v.conference_id IN ({placeholders}) AND v.year BETWEEN %s AND %s
+        """)
+        params.extend(conf_ids + [year_from, year_to])
+    if jour_ids:
+        placeholders = ','.join(['%s'] * len(jour_ids))
+        parts.append(f"""
+            SELECT j.title AS label, v.year, v.{metric} AS value
+            FROM v_journal_year v
+            JOIN journals j ON v.journal_id = j.journal_id
+            WHERE v.journal_id IN ({placeholders}) AND v.year BETWEEN %s AND %s
+        """)
+        params.extend(jour_ids + [year_from, year_to])
+
     with connection.cursor() as cur:
-        for cid in [x.strip() for x in conf_ids.split(',') if x.strip()]:
-            cur.execute(f"""
-                SELECT c.acronym AS label, v.year, v.{metric} AS value
-                FROM v_conf_year v
-                JOIN conferences c ON v.conference_id = c.conference_id
-                WHERE v.conference_id = %s AND v.year BETWEEN %s AND %s
-                ORDER BY v.year
-            """, [cid, year_from, year_to])
-            results += rows_as_dicts(cur)
-
-        for jid in [x.strip() for x in jour_ids.split(',') if x.strip()]:
-            cur.execute(f"""
-                SELECT j.title AS label, v.year, v.{metric} AS value
-                FROM v_journal_year v
-                JOIN journals j ON v.journal_id = j.journal_id
-                WHERE v.journal_id = %s AND v.year BETWEEN %s AND %s
-                ORDER BY v.year
-            """, [jid, year_from, year_to])
-            results += rows_as_dicts(cur)
-
-    return JsonResponse(results, safe=False)
+        cur.execute(" UNION ALL ".join(parts) + " ORDER BY label, year", params)
+        return JsonResponse(rows_as_dicts(cur), safe=False)
 
 
 def chart_barchart(request):
@@ -373,4 +410,65 @@ def chart_scatter(request):
             WHERE {x_field} IS NOT NULL AND {y_field} IS NOT NULL
             LIMIT 2000
         """)
+        return JsonResponse(rows_as_dicts(cur), safe=False)
+
+
+def chart_scatter_venue_year(request):
+    """GET /api/charts/scatter/venue-year/?type=conferences
+    Each point = (venue, year). x=paper_count, y=avg_authors_per_paper.
+    """
+    venue_type = request.GET.get('type', 'conferences')
+
+    with connection.cursor() as cur:
+        if venue_type == 'conferences':
+            cur.execute("""
+                SELECT c.acronym AS label, v.year, v.paper_count AS x, v.avg_authors_per_paper AS y
+                FROM v_conf_year v
+                JOIN conferences c ON v.conference_id = c.conference_id
+                WHERE v.paper_count IS NOT NULL AND v.avg_authors_per_paper IS NOT NULL
+                LIMIT 3000
+            """)
+        else:
+            cur.execute("""
+                SELECT j.title AS label, v.year, v.paper_count AS x, v.avg_authors_per_paper AS y
+                FROM v_journal_year v
+                JOIN journals j ON v.journal_id = j.journal_id
+                WHERE v.paper_count IS NOT NULL AND v.avg_authors_per_paper IS NOT NULL
+                LIMIT 3000
+            """)
+        return JsonResponse(rows_as_dicts(cur), safe=False)
+
+
+def chart_category_linechart(request):
+    """GET /api/charts/category-linechart/?type=for&category=Artificial+intelligence"""
+    cat_type = request.GET.get('type', 'for')
+    category = request.GET.get('category', '').strip()
+
+    with connection.cursor() as cur:
+        if cat_type == 'for':
+            if category:
+                cur.execute("""
+                    SELECT for_description AS label, year, conference_count AS value
+                    FROM v_for_year
+                    WHERE for_description LIKE %s
+                    ORDER BY year
+                """, [f'%{category}%'])
+            else:
+                cur.execute("""
+                    SELECT for_description AS label, year, conference_count AS value
+                    FROM v_for_year ORDER BY year
+                """)
+        else:
+            if category:
+                cur.execute("""
+                    SELECT area_name AS label, year, journal_count AS value
+                    FROM v_subject_area_year
+                    WHERE area_name LIKE %s
+                    ORDER BY year
+                """, [f'%{category}%'])
+            else:
+                cur.execute("""
+                    SELECT area_name AS label, year, journal_count AS value
+                    FROM v_subject_area_year ORDER BY year
+                """)
         return JsonResponse(rows_as_dicts(cur), safe=False)

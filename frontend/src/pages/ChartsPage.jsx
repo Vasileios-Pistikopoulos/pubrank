@@ -4,7 +4,7 @@ import {
   Chart, CategoryScale, LinearScale, PointElement, LineElement,
   BarElement, Tooltip, Legend
 } from 'chart.js'
-import { getLinechart, getBarchart, getScatter } from '../api/client'
+import { getLinechart, getCategoryLinechart, getBarchart, getScatter, getScatterVenueYear } from '../api/client'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend)
 
@@ -66,6 +66,8 @@ function LineChartPanel() {
 }
 
 // ---- Bar Chart ----
+const QUARTILE_COLORS = ['#10b981','#06b6d4','#f59e0b','#e94560']
+
 function BarChartPanel() {
   const [type,   setType]   = useState('conferences')
   const [metric, setMetric] = useState('total_papers')
@@ -74,17 +76,43 @@ function BarChartPanel() {
   const metricOptions = {
     conferences: [['total_papers','Total Papers'],['avg_papers_per_year','Avg Papers/Year'],['avg_authors_per_paper','Avg Authors/Paper']],
     journals:    [['total_papers','Total Papers'],['avg_papers_per_year','Avg Papers/Year'],['avg_authors_per_paper','Avg Authors/Paper']],
-    publishers:  [['total_journals','Total Journals'],['q1_count','Q1'],['q2_count','Q2'],['q3_count','Q3'],['q4_count','Q4']],
+    publishers:  [['total_journals','Total Journals'],['quartiles','Journals per Quartile (Q1-Q4)']],
   }
 
   const load = () => {
-    getBarchart({ type, metric }).then(r => {
-      setChartData({
-        labels: r.data.map(d => d.label),
-        datasets: [{ label: metric, data: r.data.map(d => d.value), backgroundColor: '#1a1a2e99' }],
+    if (type === 'publishers' && metric === 'quartiles') {
+      getBarchart({ type: 'publishers', metric: 'total_journals' }).then(r => {
+        const labels = r.data.map(d => d.label)
+        Promise.all([
+          getBarchart({ type: 'publishers', metric: 'q1_count' }),
+          getBarchart({ type: 'publishers', metric: 'q2_count' }),
+          getBarchart({ type: 'publishers', metric: 'q3_count' }),
+          getBarchart({ type: 'publishers', metric: 'q4_count' }),
+        ]).then(([q1, q2, q3, q4]) => {
+          const byLabel = row => Object.fromEntries(row.data.map(d => [d.label, d.value]))
+          const m1 = byLabel(q1), m2 = byLabel(q2), m3 = byLabel(q3), m4 = byLabel(q4)
+          setChartData({
+            labels,
+            datasets: [
+              { label: 'Q1', data: labels.map(l => m1[l] ?? 0), backgroundColor: QUARTILE_COLORS[0] },
+              { label: 'Q2', data: labels.map(l => m2[l] ?? 0), backgroundColor: QUARTILE_COLORS[1] },
+              { label: 'Q3', data: labels.map(l => m3[l] ?? 0), backgroundColor: QUARTILE_COLORS[2] },
+              { label: 'Q4', data: labels.map(l => m4[l] ?? 0), backgroundColor: QUARTILE_COLORS[3] },
+            ],
+          })
+        })
       })
-    })
+    } else {
+      getBarchart({ type, metric }).then(r => {
+        setChartData({
+          labels: r.data.map(d => d.label),
+          datasets: [{ label: metric, data: r.data.map(d => d.value), backgroundColor: '#1a1a2e99' }],
+        })
+      })
+    }
   }
+
+  const isMultiSeries = type === 'publishers' && metric === 'quartiles'
 
   return (
     <div className="card">
@@ -106,7 +134,11 @@ function BarChartPanel() {
       </div>
       {chartData && (
         <div className="chart-wrap">
-          <Bar data={chartData} options={{ responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }} />
+          <Bar data={chartData} options={{
+            responsive: true,
+            plugins: { legend: { display: isMultiSeries, position: 'top' } },
+            scales: { x: { stacked: false }, y: { beginAtZero: true } },
+          }} />
         </div>
       )}
     </div>
@@ -171,13 +203,112 @@ function ScatterPanel() {
   )
 }
 
+// ---- Category Line Chart (FoR / SubjectArea) ----
+function CategoryLineChartPanel() {
+  const [catType,   setCatType]   = useState('for')
+  const [filter,    setFilter]    = useState('')
+  const [chartData, setChartData] = useState(null)
+
+  const load = () => {
+    const params = { type: catType }
+    if (filter) params.category = filter
+    getCategoryLinechart(params).then(r => {
+      const byLabel = {}
+      r.data.forEach(row => {
+        if (!byLabel[row.label]) byLabel[row.label] = []
+        byLabel[row.label].push({ x: row.year, y: row.value })
+      })
+      const labels = [...new Set(r.data.map(r => r.year))].sort()
+      const datasets = Object.entries(byLabel).map(([label, pts], i) => ({
+        label,
+        data: labels.map(yr => pts.find(p => p.x === yr)?.y ?? null),
+        borderColor: COLORS[i % COLORS.length],
+        tension: 0.3, fill: false,
+      }))
+      setChartData({ labels, datasets })
+    })
+  }
+
+  return (
+    <div className="card">
+      <h2>Line Chart — Venues per Category per Year</h2>
+      <div className="filter-bar">
+        <label>Category type
+          <select value={catType} onChange={e => setCatType(e.target.value)}>
+            <option value="for">Conference Field of Research (FoR)</option>
+            <option value="subject_area">Journal Subject Area</option>
+          </select>
+        </label>
+        <label>Filter category name
+          <input value={filter} onChange={e => setFilter(e.target.value)}
+            placeholder="e.g. Artificial intelligence" style={{width:240}} />
+        </label>
+        <button className="btn" onClick={load}>Load</button>
+      </div>
+      {chartData && (
+        <div className="chart-wrap">
+          <Line data={chartData} options={{ responsive: true, plugins: { legend: { position: 'top' } } }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---- Scatter: avg authors vs papers per year ----
+function ScatterVenueYearPanel() {
+  const [venueType, setVenueType] = useState('conferences')
+  const [chartData, setChartData] = useState(null)
+
+  const load = () => {
+    getScatterVenueYear({ type: venueType }).then(r => {
+      setChartData({
+        datasets: [{
+          label: venueType === 'conferences' ? 'Conferences (venue×year)' : 'Journals (venue×year)',
+          data: r.data.map(d => ({ x: d.x, y: d.y })),
+          backgroundColor: '#1a1a2e55',
+          pointRadius: 3,
+        }],
+      })
+    })
+  }
+
+  return (
+    <div className="card">
+      <h2>Scatter Plot — Avg Authors/Paper vs Paper Count (per venue per year)</h2>
+      <div className="filter-bar">
+        <label>Venue type
+          <select value={venueType} onChange={e => setVenueType(e.target.value)}>
+            <option value="conferences">Conferences</option>
+            <option value="journals">Journals</option>
+          </select>
+        </label>
+        <button className="btn" onClick={load}>Load</button>
+      </div>
+      {chartData && (
+        <div className="chart-wrap">
+          <Scatter data={chartData} options={{
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { beginAtZero: true, title: { display: true, text: 'Papers published' } },
+              y: { beginAtZero: true, title: { display: true, text: 'Avg authors / paper' } },
+            },
+          }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ChartsPage() {
   return (
     <div>
       <h1>Charts</h1>
       <LineChartPanel />
+      <CategoryLineChartPanel />
       <BarChartPanel />
       <ScatterPanel />
+      <ScatterVenueYearPanel />
     </div>
   )
 }
