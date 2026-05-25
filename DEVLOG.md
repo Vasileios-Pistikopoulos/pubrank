@@ -268,3 +268,129 @@ END AS url
 **Backend logic (`year_profile`):**
 - Αν **δεν υπάρχουν filters** → `SELECT * FROM year_paper_list WHERE year = %s` (1ms)
 - Αν **υπάρχουν filters** (conference/journal/author) → live subquery με `LIMIT 500`
+
+---
+
+## "Only conferences with papers" filter (26/05/2026)
+
+Ίδια λογική με το αντίστοιχο φίλτρο για journals — `WHERE EXISTS (SELECT 1 FROM papers p WHERE p.conference_id = c.conference_id)` στο DBMS. Checkbox στη ConferencesPage, το φίλτρο περνά ως `has_papers=1` query param.
+
+---
+
+## Bug fix: `avg_authors_per_paper` πάντα = 1 (26/05/2026)
+
+Στα `conf_year_stats` / `journal_year_stats` (και τα αντίστοιχα views) ο υπολογισμός ήταν:
+```sql
+COUNT(p.paper_id) / COUNT(pa.author_id)
+```
+Σε ένα JOIN `papers ⋈ paper_authors`, το `COUNT(p.paper_id)` μετρά γραμμές (= ένας author ανά γραμμή), άρα ισούται πάντα με `COUNT(pa.author_id)` → ratio = 1.
+
+**Fix:**
+```sql
+ROUND(COUNT(pa.author_id) / COUNT(DISTINCT p.paper_id), 2) AS avg_authors_per_paper
+```
+Εφαρμόστηκε σε `sql/02_views.sql` (views) και `sql/04_materialized.sql` (INSERT statements). Ο πίνακας ξαναφορτώθηκε με TRUNCATE + re-INSERT.
+
+---
+
+## Navbar "pubrank" link (26/05/2026)
+
+Το `<NavLink>` στο `App.jsx` άλλαξε από `Academic DB` σε `pubrank` (το όνομα του git repo) και λειτουργεί ως link στην αρχική σελίδα (`/`).
+
+---
+
+## EmptyState component (26/05/2026)
+
+Νέο `frontend/src/components/EmptyState.jsx` — εμφανίζει ένα διακοσμητικό SVG-less circle με slash και μήνυμα όταν δεν υπάρχουν αποτελέσματα. Χρησιμοποιείται σε:
+
+| Σελίδα / Panel | Trigger |
+|----------------|---------|
+| ConferenceProfile | `per_year.length === 0` (chart), `papers.length === 0` (table) |
+| JournalProfile | ίδιο |
+| ChartsPage — LineChartPanel | `chartData.labels.length === 0` |
+| ChartsPage — CategoryLineChartPanel | ίδιο |
+| ChartsPage — BarChartPanel | ίδιο |
+| ChartsPage — ScatterPanel | `chartData.datasets[0].data.length === 0` |
+| ChartsPage — ScatterVenueYearPanel | ίδιο |
+
+---
+
+## Autocomplete suggestions σε όλα τα searchbars (26/05/2026)
+
+Αρχή: οι προτάσεις δεν φιλτράρονται ποτέ σε JS — πάντα `LIKE %s LIMIT N` query στο DBMS.
+
+| Searchbar | Endpoint | Debounce | Limit |
+|-----------|----------|----------|-------|
+| AuthorsPage | `GET /api/authors/?q=` | 300ms | 50 (SQL) |
+| ConferencesPage | `GET /api/conferences/?q=` | 250ms | 20 (SQL) |
+| JournalsPage | `GET /api/journals/?q=` | 250ms | 20 (SQL) |
+| ChartsPage — MultiVenueSelect (conf) | `GET /api/conferences/?q=` | 300ms | 20 (SQL), cap 10 UI |
+| ChartsPage — MultiVenueSelect (jour) | `GET /api/journals/?q=` | 300ms | 20 (SQL), cap 10 UI |
+| ChartsPage — CategoryLineChartPanel | `GET /api/categories/?type=&q=` | 200ms | 20 (SQL), cap 10 UI |
+| YearProfile — ConferenceSearch | `GET /api/conferences/` (all, client filter) | — | 30 (JS slice από preloaded list) |
+| YearProfile — JournalSearch | `GET /api/journals/` (all, client filter) | — | 30 (JS slice από preloaded list) |
+| YearProfile — AuthorSearch | `GET /api/authors/?q=` | 300ms | 50 (SQL) |
+
+**Σημείωση για YearProfile:** Τα Conference/Journal dropdowns φορτώνουν ολόκληρη τη λίστα (`getConferences()`/`getJournals()`) στο mount και κάνουν client-side substring filter. Αυτό είναι αποδεκτό γκρι περιοχή: τα ίδια τα δεδομένα (η λίστα venues) παράγονται από SQL· η client-side αναζήτηση αφορά **presentation** της ήδη φορτωμένης λίστας. Θα μπορούσε να αντικατασταθεί με debounced backend LIKE (όπως στα άλλα searchbars) αν η λίστα γινόταν πολύ μεγάλη.
+
+**Νέο endpoint `GET /api/categories/`:**
+```python
+# ?type=for&q=intel  →  WHERE description LIKE '%intel%' LIMIT 20
+# ?type=subject_area  →  WHERE name LIKE '%...%' LIMIT 20
+```
+Χρησιμοποιείται από το CategoryLineChartPanel για αυτόματη συμπλήρωση FoR / Subject Area χωρίς να φορτώνει ολόκληρη τη λίστα.
+
+**MultiVenueSelect component (ChartsPage):** Reusable component — δέχεται `fetchFn` (async), `getLabel`, `getId`, εμφανίζει chips για τα επιλεγμένα venues, εκπέμπει comma-separated IDs μέσω `onChange`. Αντικατέστησε τα plain text inputs για `conf_ids`/`jour_ids` στο LineChartPanel.
+
+---
+
+## YearsPage + YearProfile restructuring (26/05/2026)
+
+**Πριν:** YearsPage είχε embedded bar chart που εμφανιζόταν κάνοντας κλικ στο κουτί μιας γραμμής, αλλά το `<Link>` στη χρονολογία δεν το ενεργοποιούσε (navigation conflict).
+
+**Μετά:** 
+- YearsPage: αποκλειστικά navigation — κλικ σε οποιοδήποτε σημείο της γραμμής (ή στο link) → `navigate(/years/${year})`.
+- YearProfile: ο bar chart (total papers ανά χρονιά, τρέχον έτος highlighted με `#e94560`) εμφανίζεται πάντα στην κορυφή, πριν από τα stats.
+- Χρησιμοποιεί `getYears()` (precomputed `year_stats`) για τα δεδομένα του chart — 0.3ms query, τρέχει μία φορά στο mount.
+
+---
+
+## DBMS compliance audit (26/05/2026)
+
+Πλήρης επανέλεγχος μετά τις αλλαγές της συνεδρίας.
+
+### Backend (views.py) — 16 endpoints
+
+**Όλα COMPLIANT.** Ανάλυση:
+
+| Endpoint | Λογική | DBMS; |
+|----------|--------|-------|
+| `conference_list` | LIKE, ROW_NUMBER, EXISTS — όλα SQL | ✓ |
+| `conference_profile` | Filtered: COUNT DISTINCT, ROUND, BETWEEN σε SQL. Unfiltered: reads `conf_summary_stats` | ✓ |
+| `conference_papers` | GROUP_CONCAT, year filter, LIMIT — SQL | ✓ |
+| `journal_list` | LIKE, EXISTS — SQL | ✓ |
+| `journal_profile` | Ίδιο με conference_profile | ✓ |
+| `journal_papers` | Ίδιο με conference_papers | ✓ |
+| `author_search` | LIKE LIMIT — SQL | ✓ |
+| `author_profile` | Reads `v_author_summary`, `v_author_year` | ✓ |
+| `year_list` | `SELECT * FROM year_stats` — precomputed | ✓ |
+| `year_profile` | Unfiltered: `year_paper_list`. Filtered: live subquery GROUP_CONCAT LIMIT 500 | ✓ |
+| `chart_linechart` | UNION ALL per venue, WHERE IN (parameterized), ORDER BY — SQL | ✓ |
+| `chart_barchart` | Reads views `v_conf_summary`, `v_journal_summary`, `v_publisher_stats`, ORDER BY DESC LIMIT | ✓ |
+| `chart_scatter` | SELECT fields allowlist-validated, WHERE IS NOT NULL, LIMIT — SQL | ✓ |
+| `chart_scatter_venue_year` | Reads `v_conf_year`/`v_journal_year`, LIMIT — SQL | ✓ |
+| `category_list` | LIKE LIMIT / full list — SQL | ✓ |
+| `chart_category_linechart` | Reads `v_for_year`/`v_subject_area_year`, LIKE filter — SQL | ✓ |
+
+**Security:** Τα `metric`, `x_field`, `y_field`, `chart_type` ονόματα επικυρώνονται έναντι hardcoded set πριν από string interpolation. Κανένα user-controlled string δεν παρεμβάλλεται ανεπικύρωτο.
+
+### Frontend (ChartsPage, profiles, pages) — γκρι περιοχές
+
+Οι παρακάτω JS πράξεις δεν παραβιάζουν τη φιλοσοφία:
+
+- **`byLabel` pivoting** (LineChartPanel, CategoryLineChartPanel): Μετατρέπει flat rows `{label, year, value}` → `{label: [{x, y}]}` για το Chart.js API. Η GROUP BY λογική ήδη έχει γίνει στο SQL.
+- **Publisher quartiles join** (BarChartPanel): 4 ξεχωριστά requests για `q1_count`…`q4_count`, join ανά label σε JS. Τα counts προέρχονται από `v_publisher_stats` (SQL `COUNT(CASE WHEN...)`). Το JS απλώς ευθυγραμμίζει 4 pre-aggregated arrays για το multi-series bar chart.
+- **`[...new Set(...).sort()]` για chart labels**: Εξαγωγή μοναδικών χρονιών από pre-aggregated rows — chart axis formatting, όχι aggregation.
+- **YearProfile VenueSearchFiltered**: Client-side substring filter σε preloaded venue list (βλ. σημείωση παραπάνω).
+
+**Κανένα `reduce`, `sum`, `avg`, `count` ή άλλη aggregation function δεν εκτελείται σε Python ή JS.**

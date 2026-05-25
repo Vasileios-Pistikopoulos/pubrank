@@ -21,9 +21,22 @@ def row_as_dict(cursor):
 # ------------------------------------------------------------------
 
 def conference_list(request):
-    """GET /api/conferences/ — deduplicated by acronym, keeping the entry with most papers"""
+    """GET /api/conferences/?has_papers=1&q=icde"""
+    q = request.GET.get('q', '').strip()
+    if q:
+        with connection.cursor() as cur:
+            cur.execute("""
+                SELECT c.conference_id, c.title, c.acronym, c.`rank`
+                FROM conferences c
+                WHERE c.acronym LIKE %s OR c.title LIKE %s
+                ORDER BY c.acronym LIMIT 20
+            """, [f'%{q}%', f'%{q}%'])
+            return JsonResponse(rows_as_dicts(cur), safe=False)
+
+    has_papers = request.GET.get('has_papers') == '1'
+    extra = "AND EXISTS (SELECT 1 FROM papers p WHERE p.conference_id = c.conference_id)" if has_papers else ""
     with connection.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT c.conference_id, c.title, c.acronym, c.`rank`, c.primary_for_id,
                    pf.description AS for_description
             FROM conferences c
@@ -40,6 +53,7 @@ def conference_list(request):
                     GROUP BY c2.conference_id
                 ) ranked WHERE rn = 1
             )
+            {extra}
             ORDER BY c.acronym
         """)
         return JsonResponse(rows_as_dicts(cur), safe=False)
@@ -130,7 +144,18 @@ def conference_papers(request, conference_id):
 # ------------------------------------------------------------------
 
 def journal_list(request):
-    """GET /api/journals/?has_papers=1"""
+    """GET /api/journals/?has_papers=1&q=ieee"""
+    q = request.GET.get('q', '').strip()
+    if q:
+        with connection.cursor() as cur:
+            cur.execute("""
+                SELECT j.journal_id, j.title
+                FROM journals j
+                WHERE j.title LIKE %s
+                ORDER BY j.sjr_rank LIMIT 20
+            """, [f'%{q}%'])
+            return JsonResponse(rows_as_dicts(cur), safe=False)
+
     has_papers = request.GET.get('has_papers') == '1'
     extra = "AND EXISTS (SELECT 1 FROM papers p WHERE p.journal_id = j.journal_id)" if has_papers else ""
     with connection.cursor() as cur:
@@ -436,6 +461,24 @@ def chart_scatter_venue_year(request):
                 WHERE v.paper_count IS NOT NULL AND v.avg_authors_per_paper IS NOT NULL
                 LIMIT 3000
             """)
+        return JsonResponse(rows_as_dicts(cur), safe=False)
+
+
+def category_list(request):
+    """GET /api/categories/?type=for&q=intel"""
+    cat_type = request.GET.get('type', 'for')
+    q = request.GET.get('q', '').strip()
+    with connection.cursor() as cur:
+        if cat_type == 'for':
+            if q:
+                cur.execute("SELECT description AS name FROM primary_for WHERE description LIKE %s ORDER BY description LIMIT 20", [f'%{q}%'])
+            else:
+                cur.execute("SELECT description AS name FROM primary_for ORDER BY description")
+        else:
+            if q:
+                cur.execute("SELECT name FROM best_subject_area WHERE name LIKE %s ORDER BY name LIMIT 20", [f'%{q}%'])
+            else:
+                cur.execute("SELECT name FROM best_subject_area ORDER BY name")
         return JsonResponse(rows_as_dicts(cur), safe=False)
 
 

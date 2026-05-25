@@ -4,6 +4,7 @@ import { Line } from 'react-chartjs-2'
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js'
 import { getJournalProfile, getJournalPapers } from '../api/client'
 import { useInfiniteScroll, ScrollSentinel } from '../components/Pagination'
+import EmptyState from '../components/EmptyState'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -88,23 +89,29 @@ export default function JournalProfile() {
 
           <div className="chart-wrap">
             <h2>Publications per year</h2>
-            <Line data={chartData} options={{ responsive: true, plugins: { legend: { position: 'top' } } }} />
+            {per_year.length === 0
+              ? <EmptyState message="No publication data for this period." />
+              : <Line data={chartData} options={{ responsive: true, plugins: { legend: { position: 'top' } } }} />
+            }
           </div>
 
           <h2>Papers ({papers.length})</h2>
           <div className="card">
-            <table>
-              <thead><tr><th>Year</th><th>Vol</th><th>No</th><th>Title</th><th>Authors</th></tr></thead>
-              <tbody>
-                {visiblePapers.map(p => (
-                  <tr key={p.paper_id}>
-                    <td>{p.year}</td><td>{p.volume}</td><td>{p.number}</td>
-                    <td>{p.url ? <a href={p.url} target="_blank" rel="noreferrer">{p.title}</a> : p.title}</td>
-                    <td style={{maxWidth:300, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{p.authors}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {papers.length === 0
+              ? <EmptyState message="No papers found for this period." />
+              : <table>
+                  <thead><tr><th>Year</th><th>Vol</th><th>No</th><th>Title</th><th>Authors</th></tr></thead>
+                  <tbody>
+                    {visiblePapers.map(p => (
+                      <tr key={p.paper_id}>
+                        <td>{p.year}</td><td>{p.volume}</td><td>{p.number}</td>
+                        <td>{p.url ? <a href={p.url} target="_blank" rel="noreferrer">{p.title}</a> : p.title}</td>
+                        <td style={{maxWidth:300, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{p.authors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+            }
           </div>
           {papersHasMore && <ScrollSentinel sentinelRef={paperSentinel} />}
         </>

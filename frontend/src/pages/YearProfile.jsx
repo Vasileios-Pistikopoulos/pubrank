@@ -1,7 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getYearProfile, getConferences, getJournals, searchAuthors } from '../api/client'
+import { getYearProfile, getConferences, getJournals, searchAuthors, getYears } from '../api/client'
 import { useInfiniteScroll, ScrollSentinel } from '../components/Pagination'
+import { Bar } from 'react-chartjs-2'
+import { Chart, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js'
+
+Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
 function VenueSearch({ label, placeholder, onSelect, onClear }) {
   const [query, setQuery]       = useState('')
@@ -226,9 +230,10 @@ function AuthorSearch({ onSelect, onClear }) {
 
 export default function YearProfile() {
   const { year } = useParams()
-  const [data, setData]       = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter]   = useState({ conference_id: '', journal_id: '', author_id: '' })
+  const [data,      setData]      = useState(null)
+  const [loading,   setLoading]   = useState(true)
+  const [filter,    setFilter]    = useState({ conference_id: '', journal_id: '', author_id: '' })
+  const [allYears,  setAllYears]  = useState([])
 
   const load = (f = filter) => {
     const params = Object.fromEntries(Object.entries(f).filter(([, v]) => v))
@@ -237,6 +242,7 @@ export default function YearProfile() {
   }
 
   useEffect(() => { load({}) }, [year])
+  useEffect(() => { getYears().then(r => setAllYears([...r.data].sort((a, b) => a.year - b.year))) }, [])
 
   if (!loading && !data) return <p>Not found.</p>
 
@@ -247,6 +253,33 @@ export default function YearProfile() {
     <div>
       <p><Link to="/years">← Years</Link></p>
       <h1>Year {year}</h1>
+
+      {allYears.length > 0 && (
+        <div className="chart-wrap" style={{ marginBottom: '1.5rem' }}>
+          <Bar
+            data={{
+              labels: allYears.map(y => String(y.year)),
+              datasets: [{
+                label: 'Total Papers',
+                data: allYears.map(y => y.total_papers),
+                backgroundColor: allYears.map(y =>
+                  String(y.year) === String(year) ? '#e94560' : 'rgba(26,26,46,0.25)'
+                ),
+                borderColor: allYears.map(y =>
+                  String(y.year) === String(year) ? '#e94560' : 'rgba(26,26,46,0.4)'
+                ),
+                borderWidth: 1,
+              }],
+            }}
+            options={{
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: { legend: { display: false } },
+              scales: { y: { beginAtZero: true } },
+            }}
+          />
+        </div>
+      )}
 
       {loading ? (
         <div className="card" style={{ marginTop: '1rem' }}>

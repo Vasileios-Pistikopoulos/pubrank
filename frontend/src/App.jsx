@@ -14,7 +14,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <nav className="navbar">
-        <span className="nav-brand">Academic DB</span>
+        <NavLink to="/" className="nav-brand" end>pubrank</NavLink>
         <NavLink to="/conferences">Conferences</NavLink>
         <NavLink to="/journals">Journals</NavLink>
         <NavLink to="/authors">Authors</NavLink>

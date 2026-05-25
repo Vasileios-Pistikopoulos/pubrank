@@ -20,6 +20,9 @@ urlpatterns = [
     path('years/',                              views.year_list),
     path('years/<int:year>/profile/',          views.year_profile),
 
+    # Categories (for autocomplete)
+    path('categories/',                          views.category_list),
+
     # Charts
     path('charts/linechart/',                  views.chart_linechart),
     path('charts/category-linechart/',         views.chart_category_linechart),

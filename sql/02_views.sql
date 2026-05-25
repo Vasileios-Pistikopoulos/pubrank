@@ -19,7 +19,7 @@ SELECT
     COUNT(p.paper_id)              AS paper_count,
     COUNT(pa.author_id)            AS total_author_appearances,
     COUNT(DISTINCT pa.author_id)   AS distinct_authors,
-    ROUND(COUNT(pa.author_id) / COUNT(p.paper_id), 2) AS avg_authors_per_paper
+    ROUND(COUNT(pa.author_id) / COUNT(DISTINCT p.paper_id), 2) AS avg_authors_per_paper
 FROM papers p
 JOIN paper_authors pa ON p.paper_id = pa.paper_id
 WHERE p.paper_type = 'conference'
@@ -64,7 +64,7 @@ SELECT
     COUNT(p.paper_id)              AS paper_count,
     COUNT(pa.author_id)            AS total_author_appearances,
     COUNT(DISTINCT pa.author_id)   AS distinct_authors,
-    ROUND(COUNT(pa.author_id) / COUNT(p.paper_id), 2) AS avg_authors_per_paper
+    ROUND(COUNT(pa.author_id) / COUNT(DISTINCT p.paper_id), 2) AS avg_authors_per_paper
 FROM papers p
 JOIN paper_authors pa ON p.paper_id = pa.paper_id
 WHERE p.paper_type = 'journal'
