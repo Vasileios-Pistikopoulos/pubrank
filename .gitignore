@@ -24,8 +24,11 @@ node_modules/
 dist/
 .vite/
 
-# Datasets (too large for git)
+# Datasets / large files (too large for git)
 dblp_dataset/
+deliverables/academic_db_backup.sql
+*.sql.gz
+*.dump
 
 # OS
 .DS_Store
