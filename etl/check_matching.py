@@ -1,7 +1,3 @@
-"""
-Diagnostic script: checks how many inproceedings match iCore26 acronyms,
-and shows samples of what's matching and what's not.
-"""
 import csv
 from collections import Counter
 

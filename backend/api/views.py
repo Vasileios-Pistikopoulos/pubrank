@@ -2,10 +2,6 @@ from django.db import connection
 from django.http import JsonResponse
 
 
-# ------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------
-
 def rows_as_dicts(cursor):
     cols = [c[0] for c in cursor.description]
     return [dict(zip(cols, row)) for row in cursor.fetchall()]
@@ -16,12 +12,7 @@ def row_as_dict(cursor):
     return dict(zip(cols, row)) if row else None
 
 
-# ------------------------------------------------------------------
-# CONFERENCES
-# ------------------------------------------------------------------
-
 def conference_list(request):
-    """GET /api/conferences/?has_papers=1&q=icde"""
     q = request.GET.get('q', '').strip()
     if q:
         with connection.cursor() as cur:
@@ -60,7 +51,6 @@ def conference_list(request):
 
 
 def conference_profile(request, conference_id):
-    """GET /api/conferences/<id>/profile/?year_from=2000&year_to=2020"""
     year_from = request.GET.get('year_from')
     year_to   = request.GET.get('year_to')
 
@@ -112,7 +102,6 @@ def conference_profile(request, conference_id):
 
 
 def conference_papers(request, conference_id):
-    """GET /api/conferences/<id>/papers/?year_from=&year_to="""
     year_from = request.GET.get('year_from')
     year_to   = request.GET.get('year_to')
     params    = [conference_id]
@@ -139,12 +128,7 @@ def conference_papers(request, conference_id):
         return JsonResponse(rows_as_dicts(cur), safe=False)
 
 
-# ------------------------------------------------------------------
-# JOURNALS
-# ------------------------------------------------------------------
-
 def journal_list(request):
-    """GET /api/journals/?has_papers=1&q=ieee"""
     q = request.GET.get('q', '').strip()
     if q:
         with connection.cursor() as cur:
@@ -171,7 +155,6 @@ def journal_list(request):
 
 
 def journal_profile(request, journal_id):
-    """GET /api/journals/<id>/profile/"""
     year_from = request.GET.get('year_from')
     year_to   = request.GET.get('year_to')
 
@@ -221,7 +204,6 @@ def journal_profile(request, journal_id):
 
 
 def journal_papers(request, journal_id):
-    """GET /api/journals/<id>/papers/"""
     year_from = request.GET.get('year_from')
     year_to   = request.GET.get('year_to')
     params    = [journal_id]
@@ -248,12 +230,7 @@ def journal_papers(request, journal_id):
         return JsonResponse(rows_as_dicts(cur), safe=False)
 
 
-# ------------------------------------------------------------------
-# AUTHORS
-# ------------------------------------------------------------------
-
 def author_search(request):
-    """GET /api/authors/?q=name"""
     q = request.GET.get('q', '')
     with connection.cursor() as cur:
         cur.execute("""
@@ -264,7 +241,6 @@ def author_search(request):
 
 
 def author_profile(request, author_id):
-    """GET /api/authors/<id>/profile/"""
     with connection.cursor() as cur:
         cur.execute("SELECT * FROM v_author_summary WHERE author_id = %s", [author_id])
         summary = row_as_dict(cur)
@@ -278,25 +254,17 @@ def author_profile(request, author_id):
     return JsonResponse({'summary': summary, 'per_year': per_year})
 
 
-# ------------------------------------------------------------------
-# YEARS
-# ------------------------------------------------------------------
-
 def year_list(request):
-    """GET /api/years/ — reads from precomputed year_stats table (see sql/03_year_stats.sql)"""
     with connection.cursor() as cur:
         cur.execute("SELECT * FROM year_stats ORDER BY year")
         return JsonResponse(rows_as_dicts(cur), safe=False)
 
 
 def year_profile(request, year):
-    """GET /api/years/<year>/profile/?conference_id=&journal_id=&author_id="""
     conf_filter    = request.GET.get('conference_id')
     journal_filter = request.GET.get('journal_id')
     author_filter  = request.GET.get('author_id')
 
-    # Filters applied inside the limiting subquery — all on papers columns
-    # (author filter uses a nested IN to avoid exposing pa alias to outer query)
     inner_where = "p.year = %s"
     params = [year]
     if conf_filter:
@@ -312,7 +280,6 @@ def year_profile(request, year):
         summary = row_as_dict(cur)
 
         if not conf_filter and not journal_filter and not author_filter:
-            # Unfiltered: serve from precomputed table — instant.
             cur.execute("""
                 SELECT paper_id, title, year, paper_type, pages, url, venue, authors
                 FROM year_paper_list
@@ -320,7 +287,6 @@ def year_profile(request, year):
                 ORDER BY paper_type, venue, title
             """, [year])
         else:
-            # Filtered: live subquery — inner LIMIT 500 keeps it bounded.
             cur.execute(f"""
                 SELECT sub.paper_id, sub.title, sub.year, sub.paper_type,
                        sub.pages, sub.url, sub.venue,
@@ -348,12 +314,7 @@ def year_profile(request, year):
     return JsonResponse({'summary': summary, 'papers': papers})
 
 
-# ------------------------------------------------------------------
-# CHARTS
-# ------------------------------------------------------------------
-
 def chart_linechart(request):
-    """GET /api/charts/linechart/?conf_ids=1,2&jour_ids=3&metric=paper_count&year_from=2000&year_to=2020"""
     metric    = request.GET.get('metric', 'paper_count')
     year_from = request.GET.get('year_from', 1950)
     year_to   = request.GET.get('year_to', 2030)
@@ -395,7 +356,6 @@ def chart_linechart(request):
 
 
 def chart_barchart(request):
-    """GET /api/charts/barchart/?type=conferences&metric=total_papers"""
     chart_type = request.GET.get('type', 'conferences')
     metric     = request.GET.get('metric', 'total_papers')
 
@@ -417,7 +377,6 @@ def chart_barchart(request):
 
 
 def chart_scatter(request):
-    """GET /api/charts/scatter/?x=sjr&y=cite_score"""
     x_field = request.GET.get('x', 'sjr')
     y_field = request.GET.get('y', 'cite_score')
 
@@ -439,9 +398,6 @@ def chart_scatter(request):
 
 
 def chart_scatter_venue_year(request):
-    """GET /api/charts/scatter/venue-year/?type=conferences
-    Each point = (venue, year). x=paper_count, y=avg_authors_per_paper.
-    """
     venue_type = request.GET.get('type', 'conferences')
 
     with connection.cursor() as cur:
@@ -465,7 +421,6 @@ def chart_scatter_venue_year(request):
 
 
 def category_list(request):
-    """GET /api/categories/?type=for&q=intel"""
     cat_type = request.GET.get('type', 'for')
     q = request.GET.get('q', '').strip()
     with connection.cursor() as cur:
@@ -483,7 +438,6 @@ def category_list(request):
 
 
 def chart_category_linechart(request):
-    """GET /api/charts/category-linechart/?type=for&category=Artificial+intelligence"""
     cat_type = request.GET.get('type', 'for')
     category = request.GET.get('category', '').strip()
 

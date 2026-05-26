@@ -1,11 +1,3 @@
-"""
-ETL Script — Academic Publications Database
-Loads all source files into MySQL in dependency order.
-
-Run: python etl.py
-Requires: pip install mysql-connector-python openpyxl
-"""
-
 import csv
 import re
 import sys
@@ -14,14 +6,12 @@ import openpyxl
 import mysql.connector
 from datetime import datetime, date
 
-# =============================================================
-# CONFIG — adjust to your MySQL setup
-# =============================================================
+# database connection config
 DB_CONFIG = {
     "host":     "localhost",
     "port":     3306,
     "user":     "root",
-    "password": "root",   # <-- change this
+    "password": "root",   
     "database": "academic_db",
     "charset":  "utf8mb4",
 }
@@ -38,15 +28,10 @@ ARTICLE_CSV      = os.path.join(BASE, "dblp_dataset", "input_article.csv")
 
 BATCH_SIZE = 500   # rows per INSERT batch
 
-# =============================================================
-# HELPERS
-# =============================================================
-
 def connect():
     return mysql.connector.connect(**DB_CONFIG)
 
 def normalize(s):
-    """Lowercase, remove punctuation, collapse whitespace — for fuzzy matching."""
     s = s.lower()
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -76,13 +61,8 @@ def safe_date(v):
     return None
 
 def batch_insert(cursor, sql, rows):
-    """Execute many rows in batches to avoid memory issues."""
     for i in range(0, len(rows), BATCH_SIZE):
         cursor.executemany(sql, rows[i:i + BATCH_SIZE])
-
-# =============================================================
-# PHASE 1 — primary_for  (icoreCategories.xlsx)
-# =============================================================
 
 def load_primary_for(conn):
     print("[1/6] Loading primary_for ...")
@@ -104,10 +84,6 @@ def load_primary_for(conn):
     cur.close()
     print(f"    -> {len(rows)} rows inserted.")
 
-# =============================================================
-# PHASE 2 — best_subject_area  (bestSubjectArea.csv)
-# =============================================================
-
 def load_subject_areas(conn):
     print("[2/6] Loading best_subject_area ...")
     areas = []
@@ -126,16 +102,11 @@ def load_subject_areas(conn):
         areas)
     conn.commit()
 
-    # Build name → area_id map for later use
     cur.execute("SELECT area_id, name FROM best_subject_area")
     area_map = {name: aid for aid, name in cur.fetchall()}
     cur.close()
     print(f"    -> {len(areas)} rows inserted.")
     return area_map
-
-# =============================================================
-# PHASE 3 — conferences  (iCore26_KilledColumnsForLoading.csv)
-# =============================================================
 
 def load_conferences(conn):
     print("[3/6] Loading conferences ...")
@@ -163,7 +134,6 @@ def load_conferences(conn):
         rows)
     conn.commit()
 
-    # Build acronym → conference_id lookup (uppercase for matching)
     cur.execute("SELECT conference_id, acronym FROM conferences WHERE acronym IS NOT NULL")
     conf_map = {acr.upper(): cid for cid, acr in cur.fetchall()}
     cur.close()
@@ -171,20 +141,12 @@ def load_conferences(conn):
     return conf_map
 
 def match_conference(booktitle_upper, conf_map):
-    """
-    Try exact match first, then first-word match.
-    E.g. 'SIGMOD CONFERENCE' → try 'SIGMOD CONFERENCE', then 'SIGMOD'.
-    """
     if booktitle_upper in conf_map:
         return conf_map[booktitle_upper]
     first_word = booktitle_upper.split()[0] if booktitle_upper else ""
     if len(first_word) >= 2 and first_word in conf_map:
         return conf_map[first_word]
     return None
-
-# =============================================================
-# PHASE 4 — journals  (journal_ranking_data_raw.csv)
-# =============================================================
 
 def load_journals(conn, area_map):
     print("[4/6] Loading journals ...")
@@ -235,18 +197,7 @@ def load_journals(conn, area_map):
     print(f"    -> {len(rows)} journals inserted.")
     return journal_id_map
 
-# =============================================================
-# JOURNAL MATCHING  (dblp abbreviated → Kaggle full title)
-# =============================================================
-
 def build_journal_matcher(journal_id_map):
-    """
-    Returns a function: dblp_journal_name -> journal_id or None.
-
-    Strategy (in order):
-      1. Exact match (normalized)
-      2. difflib close match against all normalized Kaggle titles (cutoff 0.6)
-    """
     norm_map = {normalize(title): jid for title, jid in journal_id_map.items()}
     norm_keys = list(norm_map.keys())
     cache = {}
@@ -271,10 +222,6 @@ def build_journal_matcher(journal_id_map):
         return result
 
     return match
-
-# =============================================================
-# PHASE 5 — conference papers  (input_inproceedings.csv)
-# =============================================================
 
 def load_conference_papers(conn, conf_map):
     print("[5/6] Loading conference papers ...")
@@ -350,10 +297,6 @@ def load_conference_papers(conn, conf_map):
     conn.commit()
     cur.close()
     print(f"    -> {total_papers} conference papers inserted. {skipped} skipped.")
-
-# =============================================================
-# PHASE 6 — journal papers  (input_article.csv)
-# =============================================================
 
 def load_journal_papers(conn, journal_matcher):
     print("[6/6] Loading journal papers ...")
@@ -439,10 +382,6 @@ def load_journal_papers(conn, journal_matcher):
     cur.close()
     print(f"    -> {total_papers} journal papers inserted. {skipped} skipped.")
 
-# =============================================================
-# MAIN
-# =============================================================
-
 def main():
     print("=" * 60)
     print("ETL START:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -450,7 +389,6 @@ def main():
 
     conn = connect()
 
-    # Disable FK checks during bulk load for speed; re-enable after
     cur = conn.cursor()
     cur.execute("SET FOREIGN_KEY_CHECKS = 0")
     cur.close()

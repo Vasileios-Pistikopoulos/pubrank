@@ -12,7 +12,6 @@ Chart.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement
 
 const COLORS = ['#e94560','#1a1a2e','#06b6d4','#f59e0b','#10b981','#8b5cf6','#f43f5e','#0ea5e9']
 
-// ---- Multi-venue autocomplete select ----
 function MultiVenueSelect({ label, fetchFn, getLabel, getId, placeholder, onChange }) {
   const [query,       setQuery]       = useState('')
   const [suggestions, setSuggestions] = useState([])
@@ -93,7 +92,6 @@ function MultiVenueSelect({ label, fetchFn, getLabel, getId, placeholder, onChan
   )
 }
 
-// ---- Line Chart ----
 function LineChartPanel() {
   const [confIds,  setConfIds]  = useState('')
   const [jourIds,  setJourIds]  = useState('')
@@ -160,7 +158,6 @@ function LineChartPanel() {
   )
 }
 
-// ---- Bar Chart ----
 const QUARTILE_COLORS = ['#10b981','#06b6d4','#f59e0b','#e94560']
 
 function BarChartPanel() {
@@ -242,7 +239,6 @@ function BarChartPanel() {
   )
 }
 
-// ---- Scatter Plot ----
 const SCATTER_FIELDS = [
   ['sjr','SJR'],['cite_score','Cite Score'],['h_index','H-index'],
   ['total_docs','Total Docs'],['total_docs_3y','Total Docs 3y'],
@@ -302,7 +298,6 @@ function ScatterPanel() {
   )
 }
 
-// ---- Category Line Chart (FoR / SubjectArea) ----
 function CategoryLineChartPanel() {
   const [catType,     setCatType]     = useState('for')
   const [filter,      setFilter]      = useState('')
@@ -393,7 +388,6 @@ function CategoryLineChartPanel() {
   )
 }
 
-// ---- Scatter: avg authors vs papers per year ----
 function ScatterVenueYearPanel() {
   const [venueType, setVenueType] = useState('conferences')
   const [chartData, setChartData] = useState(null)

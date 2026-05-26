@@ -1,18 +1,10 @@
--- =============================================================
--- DDL Script: Academic Publications Database
--- Engine: MySQL InnoDB
--- Created: 2026-05-13
--- =============================================================
-
 CREATE DATABASE IF NOT EXISTS academic_db
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
 USE academic_db;
 
--- =============================================================
--- LOOKUP TABLES
--- =============================================================
+-- lookup tables
 
 -- Conference field-of-research categories (from icoreCategories)
 CREATE TABLE IF NOT EXISTS primary_for (
@@ -29,8 +21,6 @@ CREATE TABLE IF NOT EXISTS best_subject_area (
     UNIQUE KEY uq_area_name (name)
 ) ENGINE=InnoDB;
 
--- Authors lookup (pipe-separated in source → split during ETL)
--- Assumption: no synonymy (as per assignment)
 CREATE TABLE IF NOT EXISTS authors (
     author_id   INT          NOT NULL AUTO_INCREMENT,
     name        VARCHAR(512) NOT NULL,
@@ -38,8 +28,6 @@ CREATE TABLE IF NOT EXISTS authors (
     UNIQUE KEY uq_author_name (name(512))
 ) ENGINE=InnoDB;
 
--- Conferences (from iCore26 ranking file)
--- Rank stored as VARCHAR: includes A*, A, B, C, National variants, Unranked, etc.
 CREATE TABLE IF NOT EXISTS conferences (
     conference_id   INT          NOT NULL AUTO_INCREMENT,
     icore_id        INT          NULL,           -- original ID from iCore26
@@ -55,8 +43,6 @@ CREATE TABLE IF NOT EXISTS conferences (
         ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- Journals (from Kaggle ranking file)
--- Stores the ranking metadata, NOT the articles themselves
 CREATE TABLE IF NOT EXISTS journals (
     journal_id          INT            NOT NULL AUTO_INCREMENT,
     sjr_rank            INT            NULL,
@@ -83,14 +69,8 @@ CREATE TABLE IF NOT EXISTS journals (
         ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- =============================================================
--- FACTUAL TABLES
--- =============================================================
+-- factual tables
 
--- Unified papers table (conference + journal articles)
--- Trade-off: single table with paper_type vs two separate tables.
--- Choice: single table — simpler cross-type queries (total papers/year, etc.)
--- Consequence: volume/number are NULL for conference papers.
 CREATE TABLE IF NOT EXISTS papers (
     paper_id        INT          NOT NULL AUTO_INCREMENT,
     dblp_id         INT          NULL,           -- original numeric id from source CSV
@@ -101,11 +81,8 @@ CREATE TABLE IF NOT EXISTS papers (
     url             VARCHAR(512) NULL,
     mdate           DATE         NULL,
     paper_type      ENUM('conference','journal') NOT NULL,
-    -- FK to conferences (NULL for journal papers)
     conference_id   INT          NULL,
-    -- FK to journals (NULL for conference papers)
     journal_id      INT          NULL,
-    -- Journal-specific fields (NULL for conference papers)
     volume          VARCHAR(20)  NULL,
     number          VARCHAR(20)  NULL,
     PRIMARY KEY (paper_id),
@@ -121,7 +98,6 @@ CREATE TABLE IF NOT EXISTS papers (
         ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- N:M between papers and authors, with author position (order in byline)
 CREATE TABLE IF NOT EXISTS paper_authors (
     paper_id        INT  NOT NULL,
     author_id       INT  NOT NULL,

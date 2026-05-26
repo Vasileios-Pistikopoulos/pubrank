@@ -8,10 +8,8 @@ export function useInfiniteScroll(items) {
   lenRef.current    = items.length
   const observerRef = useRef(null)
 
-  // Reset when the item list changes (search, filter, new data load)
   useEffect(() => { setVisibleCount(PAGE_SIZE) }, [items.length])
 
-  // Callback ref: called when the sentinel div mounts/unmounts
   const sentinelRef = useCallback(el => {
     if (observerRef.current) { observerRef.current.disconnect(); observerRef.current = null }
     if (!el) return

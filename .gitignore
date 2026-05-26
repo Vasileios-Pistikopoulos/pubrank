@@ -26,6 +26,7 @@ dist/
 
 # Datasets / large files (too large for git)
 dblp_dataset/
+academic_db_backup.sql
 deliverables/academic_db_backup.sql
 *.sql.gz
 *.dump
@@ -39,7 +40,6 @@ Thumbs.db
 .idea/
 *.swp
 
-# Claude Code
 .claude/
 
 # Migrations (optional — keep if you want schema history)
