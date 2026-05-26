@@ -109,5 +109,5 @@ npm run dev
 
 Κρίσιμα σημεία:
 - **Materialized tables** (`conf_summary_stats`, `journal_summary_stats`, `year_stats`, `year_paper_list`) για queries < 3ms
-- **Parameterized queries** παντού — δεν υπάρχει SQL injection επιφάνεια
+- **Parameterized queries** 
 - **Allowlist validation** για dynamic field names στα chart endpoints
