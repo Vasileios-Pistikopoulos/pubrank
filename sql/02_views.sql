@@ -1,17 +1,11 @@
--- =============================================================
--- Views: Academic Publications Database
--- Run after 01_schema.sql and ETL
--- =============================================================
 
 USE academic_db;
 
--- =============================================================
--- CONFERENCE VIEWS
--- =============================================================
 
--- Papers + author counts per conference per year
--- Used for: linechart in conference profile
-DROP VIEW IF EXISTS v_conf_year;
+-- CONFERENCE VIEWS
+
+
+
 CREATE VIEW v_conf_year AS
 SELECT
     p.conference_id,
@@ -27,8 +21,6 @@ WHERE p.paper_type = 'conference'
 GROUP BY p.conference_id, p.year;
 
 
--- Overall summary stats per conference
--- Used for: conference profile header (first/last year, totals, averages)
 DROP VIEW IF EXISTS v_conf_summary;
 CREATE VIEW v_conf_summary AS
 SELECT
@@ -51,9 +43,8 @@ WHERE p.year IS NOT NULL
 GROUP BY c.conference_id, c.title, c.acronym, c.`rank`, c.primary_for_id;
 
 
--- =============================================================
 -- JOURNAL VIEWS
--- =============================================================
+
 
 -- Papers + author counts per journal per year
 DROP VIEW IF EXISTS v_journal_year;
@@ -100,9 +91,8 @@ GROUP BY j.journal_id, j.title, j.sjr_rank, j.best_quartile,
          j.publisher, j.country, j.sjr, j.cite_score, j.h_index;
 
 
--- =============================================================
 -- AUTHOR VIEWS
--- =============================================================
+
 
 -- Overall stats per author
 -- Used for: author profile header
@@ -140,9 +130,8 @@ WHERE p.year IS NOT NULL
 GROUP BY pa.author_id, p.year;
 
 
--- =============================================================
 -- YEAR VIEWS
--- =============================================================
+
 
 -- Profile per year (total papers, venues, authors)
 -- Used for: year profile page
@@ -161,13 +150,8 @@ WHERE p.year IS NOT NULL
 GROUP BY p.year;
 
 
--- =============================================================
 -- CHART VIEWS
--- =============================================================
 
--- For linechart: multiple venues selected by user
--- (used with WHERE conference_id IN (...) or journal_id IN (...))
--- v_conf_year and v_journal_year already cover this
 
 -- For barchart: total/avg papers and authors per conference
 -- Reuses v_conf_summary / v_journal_summary

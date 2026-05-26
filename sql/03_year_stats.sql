@@ -1,8 +1,8 @@
--- =============================================================
+
 -- Precomputed year statistics table
 -- Run ONCE after ETL to populate. Re-run if data changes.
 -- Replaces the slow JOIN query in year_list API endpoint.
--- =============================================================
+
 
 USE academic_db;
 

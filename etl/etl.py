@@ -380,7 +380,6 @@ def load_journal_papers(conn, journal_matcher):
             pa_buf)
         conn.commit()
     cur.close()
-    print(f"    -> {total_papers} journal papers inserted. {skipped} skipped.")
 
 def main():
     print("=" * 60)
