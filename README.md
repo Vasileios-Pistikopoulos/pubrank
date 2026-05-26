@@ -1,6 +1,7 @@
 # Pubrank
 **Συντελεστής:** Βασίλης Πιστικόπουλος, Βαίοτσης Ευάγγελος (ΑΜ: 5336,5096)
 
+Video Link: https://drive.google.com/drive/folders/1bcNKmifTBzFCyDLQpTv_k8A_mM26xdX2?usp=sharing
 ---
 
 ## Περιγραφή
