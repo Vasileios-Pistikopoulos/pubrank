@@ -60,7 +60,7 @@ mysql -u root -p -e "CREATE DATABASE academic_db CHARACTER SET utf8mb4;"
 Εκτέλεση DDL + views:
 
 ```bash
-# Windows (λόγω ελληνικών στο path, χρησιμοποίησε pipe αντί για SOURCE)
+# Windows 
 Get-Content sql\01_schema.sql | mysql -u root -p academic_db
 Get-Content sql\02_views.sql  | mysql -u root -p academic_db
 ```
@@ -85,7 +85,7 @@ Get-Content sql\05_year_paper_list.sql | mysql -u root -p academic_db
 
 ```bash
 cd backend
-copy .env.example .env   # και συμπλήρωσε DB_PASSWORD
+copy  .env   # και συμπλήρωσε DB_PASSWORD
 pip install django mysqlclient django-cors-headers python-dotenv
 python manage.py runserver
 ```
@@ -105,7 +105,7 @@ npm run dev
 
 ## Αρχιτεκτονική queries
 
-Όλη η επεξεργασία γίνεται **μέσα στο DBMS** (SQL views + precomputed tables). Το Django backend λειτουργεί αποκλειστικά ως αγωγός: `request → cursor.execute(SQL) → JsonResponse`. Δεν γίνεται καμία aggregation σε Python.
+Όλη η επεξεργασία γίνεται **μέσα στο DBMS** (SQL views + precomputed tables). Το Django backend λειτουργεί αποκλειστικά ως αγωγός: `request → cursor.execute(SQL) -> JsonResponse`. Δεν γίνεται καμία aggregation σε Python.
 
 Κρίσιμα σημεία:
 - **Materialized tables** (`conf_summary_stats`, `journal_summary_stats`, `year_stats`, `year_paper_list`) για queries < 3ms
